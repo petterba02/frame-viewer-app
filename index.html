@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Frames">
+  <title>Frame Stepper</title>
+  <style>
+    [hidden] { display: none !important; }
+    body {
+      font-family: -apple-system, sans-serif;
+      background: #111;
+      color: #fff;
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 14px 0 24px;
+      box-sizing: border-box;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    video { width: 100%; max-height: 52vh; background: #000; }
+    .row { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 0 10px; }
+    label { color: #aaa; font-size: 15px; }
+    select, button {
+      font-size: 18px;
+      border: none;
+      border-radius: 12px;
+      background: #3a3a3c;
+      color: #fff;
+      touch-action: manipulation;
+    }
+    select { padding: 8px 10px; }
+    button { padding: 14px 16px; min-width: 56px; }
+    button.primary { background: #0a84ff; }
+    #info { font-size: 22px; font-variant-numeric: tabular-nums; text-align: center; }
+    #info small { display: block; font-size: 14px; color: #aaa; }
+    input[type=range] { width: 92%; }
+    #marks { font-size: 16px; color: #ffd60a; text-align: center; min-height: 22px; font-variant-numeric: tabular-nums; }
+    #file { display: none; }
+    #empty { color: #888; padding: 40px 20px; text-align: center; }
+  </style>
+</head>
+<body>
+  <label class="row" for="file">
+    <span class="primary" style="background:#0a84ff;padding:14px 22px;border-radius:12px;font-size:18px;color:#fff;">Choose video</span>
+  </label>
+  <input id="file" type="file" accept="video/*">
+
+  <div id="empty">Choose a video to start.</div>
+  <video id="vid" playsinline muted preload="auto" hidden></video>
+
+  <div id="main" hidden>
+    <div id="info"><span id="frameTxt">Frame 0</span><small id="timeTxt">0.000 s</small></div>
+  </div>
+  <input type="range" id="slider" min="0" max="0" value="0" hidden>
+
+  <div class="row" id="ctrl" hidden>
+    <button id="b10m">-10</button>
+    <button id="b1m">-1</button>
+    <button id="play" class="primary">Play</button>
+    <button id="b1p">+1</button>
+    <button id="b10p">+10</button>
+  </div>
+
+  <div class="row" id="opts" hidden>
+    <label for="fps">FPS</label>
+    <select id="fps">
+      <option>24</option><option>25</option><option>30</option>
+      <option selected>60</option><option>120</option><option>240</option>
+    </select>
+    <label for="speed">Speed</label>
+    <select id="speed">
+      <option value="0.1">0.1x</option><option value="0.25">0.25x</option>
+      <option value="0.5">0.5x</option><option value="1" selected>1x</option>
+    </select>
+  </div>
+
+  <div class="row" id="markRow" hidden>
+    <button id="markA">Mark A</button>
+    <button id="markB">Mark B</button>
+    <button id="clearMarks">Clear</button>
+  </div>
+  <div id="marks"></div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const vid = $("vid");
+    let fps = 60;
+    let markA = null, markB = null;   // frame numbers
+
+    const frameNow = () => Math.floor(vid.currentTime * fps + 1e-6);
+    const totalFrames = () => Math.max(1, Math.floor(vid.duration * fps));
+
+    // Seek to the middle of a frame so rounding never lands on a neighbour
+    function goTo(n) {
+      n = Math.min(Math.max(0, n), totalFrames() - 1);
+      vid.currentTime = (n + 0.5) / fps;
+    }
+    function step(d) {
+      if (!vid.paused) pause();
+      goTo(frameNow() + d);
+    }
+
+    function update() {
+      const n = frameNow();
+      $("frameTxt").textContent = "Frame " + n + " / " + (totalFrames() - 1);
+      $("timeTxt").textContent = (n / fps).toFixed(3) + " s";
+      $("slider").value = n;
+    }
+
+    function renderMarks() {
+      let t = "";
+      if (markA !== null) t += "A: " + markA + "  ";
+      if (markB !== null) t += "B: " + markB + "  ";
+      if (markA !== null && markB !== null) {
+        const d = markB - markA;
+        t += "\u2192 " + d + " frames = " + (Math.abs(d) / fps).toFixed(3) + " s";
+      }
+      $("marks").textContent = t;
+    }
+
+    function play() { vid.play(); $("play").textContent = "Pause"; loop(); }
+    function pause() { vid.pause(); $("play").textContent = "Play"; goTo(frameNow()); }
+    function loop() {
+      update();
+      if (!vid.paused) requestAnimationFrame(loop);
+    }
+
+    // ---------- Load video ----------
+    $("file").addEventListener("change", (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      if (vid.src) URL.revokeObjectURL(vid.src);
+      vid.src = URL.createObjectURL(f);
+      vid.load();
+    });
+
+    vid.addEventListener("loadedmetadata", () => {
+      ["empty"].forEach((id) => $(id).hidden = true);
+      ["vid", "main", "slider", "ctrl", "opts", "markRow"].forEach((id) => $(id).hidden = false);
+      $("slider").max = totalFrames() - 1;
+      markA = markB = null; renderMarks();
+      pause();
+      goTo(0);
+    });
+    vid.addEventListener("seeked", update);
+    vid.addEventListener("ended", () => { $("play").textContent = "Play"; update(); });
+
+    // ---------- Controls ----------
+    $("play").addEventListener("click", () => vid.paused ? play() : pause());
+
+    $("slider").addEventListener("input", () => {
+      if (!vid.paused) pause();
+      goTo(parseInt($("slider").value, 10));
+    });
+
+    $("fps").addEventListener("change", () => {
+      const n = frameNow() / fps;           // keep the same time position
+      fps = parseInt($("fps").value, 10);
+      $("slider").max = totalFrames() - 1;
+      goTo(Math.round(n * fps));
+    });
+    $("speed").addEventListener("change", () => {
+      vid.playbackRate = parseFloat($("speed").value);
+    });
+
+    // Tap = one step, hold = repeat
+    function hold(id, d) {
+      const b = $(id);
+      let t1 = null, t2 = null;
+      const stop = () => { clearTimeout(t1); clearInterval(t2); };
+      b.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        step(d);
+        t1 = setTimeout(() => { t2 = setInterval(() => step(d), 70); }, 400);
+      });
+      ["pointerup", "pointerleave", "pointercancel"].forEach((ev) => b.addEventListener(ev, stop));
+      b.addEventListener("contextmenu", (e) => e.preventDefault());
+    }
+    hold("b1m", -1); hold("b1p", 1); hold("b10m", -10); hold("b10p", 10);
+
+    $("markA").addEventListener("click", () => { markA = frameNow(); renderMarks(); });
+    $("markB").addEventListener("click", () => { markB = frameNow(); renderMarks(); });
+    $("clearMarks").addEventListener("click", () => { markA = markB = null; renderMarks(); });
+
+    // Keyboard (on a PC): arrows step, shift = 10 frames, space = play/pause
+    document.addEventListener("keydown", (e) => {
+      if (vid.hidden) return;
+      if (e.key === "ArrowRight") step(e.shiftKey ? 10 : 1);
+      else if (e.key === "ArrowLeft") step(e.shiftKey ? -10 : -1);
+      else if (e.key === " ") { e.preventDefault(); vid.paused ? play() : pause(); }
+    });
+  </script>
+</body>
+</html>
