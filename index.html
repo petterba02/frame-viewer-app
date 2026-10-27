@@ -23,7 +23,7 @@
       -webkit-user-select: none;
       user-select: none;
     }
-    video { width: 100%; max-height: 52vh; background: #000; }
+    video { width: 100%; max-height: 48vh; background: #000; }
     .row { display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 0 10px; }
     label { color: #aaa; font-size: 15px; }
     select, button {
@@ -40,7 +40,16 @@
     #info { font-size: 22px; font-variant-numeric: tabular-nums; text-align: center; }
     #info small { display: block; font-size: 14px; color: #aaa; }
     input[type=range] { width: 92%; }
-    #marks { font-size: 16px; color: #ffd60a; text-align: center; min-height: 22px; font-variant-numeric: tabular-nums; }
+    #marks {
+      font-size: 17px;
+      color: #ffd60a;
+      text-align: center;
+      min-height: 22px;
+      font-variant-numeric: tabular-nums;
+      white-space: pre-line;
+      line-height: 1.5;
+    }
+    #ratio { font-size: 24px; font-weight: 600; color: #30d158; text-align: center; min-height: 30px; font-variant-numeric: tabular-nums; }
     #file { display: none; }
     #empty { color: #888; padding: 40px 20px; text-align: center; }
   </style>
@@ -83,15 +92,17 @@
   <div class="row" id="markRow" hidden>
     <button id="markA">Mark A</button>
     <button id="markB">Mark B</button>
+    <button id="markC">Mark C</button>
     <button id="clearMarks">Clear</button>
   </div>
   <div id="marks"></div>
+  <div id="ratio"></div>
 
   <script>
     const $ = (id) => document.getElementById(id);
     const vid = $("vid");
     let fps = 60;
-    let markA = null, markB = null;   // frame numbers
+    let markA = null, markB = null, markC = null;   // frame numbers
 
     const frameNow = () => Math.floor(vid.currentTime * fps + 1e-6);
     const totalFrames = () => Math.max(1, Math.floor(vid.duration * fps));
@@ -114,14 +125,34 @@
     }
 
     function renderMarks() {
-      let t = "";
-      if (markA !== null) t += "A: " + markA + "  ";
-      if (markB !== null) t += "B: " + markB + "  ";
+      const lines = [];
+      if (markA !== null) lines.push("A: frame " + markA);
+      if (markB !== null) lines.push("B: frame " + markB);
+      if (markC !== null) lines.push("C: frame " + markC);
+
+      let ab = null, bc = null;
       if (markA !== null && markB !== null) {
         const d = markB - markA;
-        t += "\u2192 " + d + " frames = " + (Math.abs(d) / fps).toFixed(3) + " s";
+        ab = d / fps;
+        lines.push("AB (contact): " + d + " frames = " + ab.toFixed(3) + " s");
       }
-      $("marks").textContent = t;
+      if (markB !== null && markC !== null) {
+        const d = markC - markB;
+        bc = d / fps;
+        lines.push("BC (flight): " + d + " frames = " + bc.toFixed(3) + " s");
+      }
+      $("marks").textContent = lines.join("\n");
+
+      // Flight time divided by ground contact time
+      let r = "";
+      if (ab !== null && bc !== null) {
+        if (ab <= 0 || bc <= 0) {
+          r = "Marks must be in order: A < B < C";
+        } else {
+          r = "BC / AB = " + (bc / ab).toFixed(2);
+        }
+      }
+      $("ratio").textContent = r;
     }
 
     function play() { vid.play(); $("play").textContent = "Pause"; loop(); }
@@ -144,7 +175,7 @@
       ["empty"].forEach((id) => $(id).hidden = true);
       ["vid", "main", "slider", "ctrl", "opts", "markRow"].forEach((id) => $(id).hidden = false);
       $("slider").max = totalFrames() - 1;
-      markA = markB = null; renderMarks();
+      markA = markB = markC = null; renderMarks();
       pause();
       goTo(0);
     });
@@ -163,6 +194,8 @@
       const n = frameNow() / fps;           // keep the same time position
       fps = parseInt($("fps").value, 10);
       $("slider").max = totalFrames() - 1;
+      markA = markB = markC = null;         // marks belong to the old FPS
+      renderMarks();
       goTo(Math.round(n * fps));
     });
     $("speed").addEventListener("change", () => {
@@ -186,7 +219,8 @@
 
     $("markA").addEventListener("click", () => { markA = frameNow(); renderMarks(); });
     $("markB").addEventListener("click", () => { markB = frameNow(); renderMarks(); });
-    $("clearMarks").addEventListener("click", () => { markA = markB = null; renderMarks(); });
+    $("markC").addEventListener("click", () => { markC = frameNow(); renderMarks(); });
+    $("clearMarks").addEventListener("click", () => { markA = markB = markC = null; renderMarks(); });
 
     // Keyboard (on a PC): arrows step, shift = 10 frames, space = play/pause
     document.addEventListener("keydown", (e) => {
